@@ -1,0 +1,92 @@
+# ============================================================
+# DeiT Linear Taylor Integral — Configuration
+# ============================================================
+# Three variants: Tiny (5M), Small (22M), Base (86M)
+# All use Taylor-kernel linear attention with integral denoising.
+# ============================================================
+
+# ── Model ────────────────────────────────────────────────────
+model:
+  name: deit_linear_taylor_integral
+  variant: tiny                     # tiny | small | base
+  img_size: 224
+  patch_size: 16
+  in_channels: 3
+  num_classes: 1000
+  drop_path_rate: 0.1
+  dropout: 0.0
+  attn_dropout: 0.0
+  use_dist_token: false             # true for distillation training
+
+  # Variant-specific (overridden by variant selection)
+  # ┌──────────┬───────────┬───────┬───────────┬──────────────┐
+  # │ variant  │ embed_dim │ depth │ num_heads │ num_signals  │
+  # ├──────────┼───────────┼───────┼───────────┼──────────────┤
+  # │ tiny     │   192     │  12   │     3     │      2       │
+  # │ small    │   384     │  12   │     6     │      2       │
+  # │ base     │   768     │  12   │    12     │      2       │
+  # └──────────┴───────────┴───────┴───────────┴──────────────┘
+
+# ── Data ──────────────────────────────────────────────────────
+data:
+  format: parquet                   # ImageNet-1K stored as .parquet files
+  lazy: false                       # true = read parquet on-the-fly (low RAM); false = load into RAM (fast)
+  # Expected layout:
+  #   data_dir/train/*.parquet      (or data_dir/train-*.parquet)
+  #   data_dir/val/*.parquet        (or data_dir/val-*.parquet)
+
+# ── Training ─────────────────────────────────────────────────
+train:
+  dataset: imagenet                 # imagenet | cifar10 | cifar100
+  data_dir: ./data/imagenet         # path to directory with train/ and val/ parquet shards
+  batch_size: 256
+  epochs: 300
+  warmup_epochs: 5
+
+  # Optimizer
+  optimizer: adamw
+  lr: 1.0e-3
+  weight_decay: 0.05
+  betas: [0.9, 0.999]
+
+  # LR scheduler
+  scheduler: cosine
+  min_lr: 1.0e-5
+
+  # Augmentation (DeiT recipe)
+  augmentation:
+    rand_augment: rand-m9-mstd0.5-inc1
+    mixup_alpha: 0.8
+    cutmix_alpha: 1.0
+    mixup_prob: 1.0
+    mixup_switch_prob: 0.5
+    color_jitter: 0.4
+    reprob: 0.25                    # random erasing probability
+
+  # Regularization
+  label_smoothing: 0.1
+  stochastic_depth: 0.1            # same as drop_path_rate
+
+  # Distillation (only when use_dist_token=true)
+  distillation:
+    enabled: false
+    teacher: regnety_160            # teacher model name
+    teacher_checkpoint: ""
+    distillation_type: hard         # soft | hard
+    distillation_alpha: 0.5
+    distillation_tau: 3.0
+
+# ── Evaluation ───────────────────────────────────────────────
+eval:
+  batch_size: 512
+  crop_ratio: 0.875
+
+# ── System ───────────────────────────────────────────────────
+system:
+  num_workers: 8
+  pin_memory: true
+  mixed_precision: true             # fp16 / bf16 automatic
+  seed: 42
+  output_dir: ./checkpoints
+  log_interval: 50                  # steps between logging
+  save_interval: 10                 # epochs between checkpoints
