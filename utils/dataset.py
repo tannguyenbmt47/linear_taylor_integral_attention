@@ -177,14 +177,40 @@ def build_imagenet_dataset(data_dir, split="train", img_size=224,
     Returns:
         torch.utils.data.Dataset
     """
-    split_dir = os.path.join(data_dir, split)
-    parquet_files = sorted(glob.glob(os.path.join(split_dir, "*.parquet")))
+    # Search for parquet files in multiple common layouts:
+    #   1. data_dir/train/*.parquet          (subfolder per split)
+    #   2. data_dir/train-*.parquet          (flat, prefix per split)
+    #   3. data_dir/data/train-*.parquet     (HuggingFace default)
+    #   4. data_dir/data/*.parquet           (single data/ folder — use split prefix)
+    search_patterns = [
+        os.path.join(data_dir, split, "*.parquet"),
+        os.path.join(data_dir, f"{split}*.parquet"),
+        os.path.join(data_dir, f"{split}-*.parquet"),
+        os.path.join(data_dir, "data", f"{split}*.parquet"),
+        os.path.join(data_dir, "data", f"{split}-*.parquet"),
+        os.path.join(data_dir, "data", split, "*.parquet"),
+    ]
+    # For val split, also try "validation" naming (HuggingFace convention)
+    if split == "val":
+        search_patterns += [
+            os.path.join(data_dir, "validation", "*.parquet"),
+            os.path.join(data_dir, f"validation*.parquet"),
+            os.path.join(data_dir, f"validation-*.parquet"),
+            os.path.join(data_dir, "data", f"validation*.parquet"),
+            os.path.join(data_dir, "data", f"validation-*.parquet"),
+            os.path.join(data_dir, "data", "validation", "*.parquet"),
+        ]
+
+    parquet_files = []
+    for pattern in search_patterns:
+        parquet_files = sorted(glob.glob(pattern))
+        if parquet_files:
+            break
+
     if not parquet_files:
-        # Also check if parquets are directly in data_dir (flat layout)
-        parquet_files = sorted(glob.glob(os.path.join(data_dir, f"{split}*.parquet")))
-    if not parquet_files:
+        searched = "\n  ".join(search_patterns)
         raise FileNotFoundError(
-            f"No parquet files found in {split_dir} or {data_dir}/{split}*.parquet"
+            f"No parquet files found for split='{split}'. Searched:\n  {searched}"
         )
 
     if split == "train":
