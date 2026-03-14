@@ -1,0 +1,68 @@
+# ============================================================
+# DeiT Integral Attention — Oxford-IIIT Pet (37 classes)
+# ============================================================
+# Softmax-based integral attention (O(N²)) with signal denoising.
+# ============================================================
+
+# ── Model ────────────────────────────────────────────────────
+model:
+  name: deit_integral_attention
+  variant: tiny                     # tiny | small | base
+  img_size: 224
+  patch_size: 16
+  in_channels: 3
+  num_classes: 37
+  drop_path_rate: 0.1
+  dropout: 0.0
+  attn_dropout: 0.0
+  use_dist_token: false
+
+# ── Data ─────────────────────────────────────────────────────
+data:
+  format: parquet
+  lazy: false
+
+# ── Training ─────────────────────────────────────────────────
+train:
+  dataset: oxford-iiit-pet
+  data_dir: ./data/dog/oxford-iiit-pet
+  batch_size: 64
+  epochs: 100
+  warmup_epochs: 5
+
+  # Optimizer
+  optimizer: adamw
+  lr: 5.0e-4
+  weight_decay: 0.05
+  betas: [0.9, 0.999]
+
+  # LR scheduler
+  scheduler: cosine
+  min_lr: 1.0e-6
+
+  # Augmentation
+  augmentation:
+    rand_augment: rand-m9-mstd0.5-inc1
+    mixup_alpha: 0.2
+    cutmix_alpha: 1.0
+    mixup_prob: 0.5
+    mixup_switch_prob: 0.5
+    color_jitter: 0.4
+    reprob: 0.25
+
+  label_smoothing: 0.1
+
+# ── Evaluation ───────────────────────────────────────────────
+eval:
+  batch_size: 128
+  crop_ratio: 0.875
+
+# ── System ───────────────────────────────────────────────────
+system:
+  output_dir: ./checkpoints/deit_integral_pet
+  num_workers: 4
+  pin_memory: true
+  mixed_precision: true
+  seed: 42
+  log_interval: 10
+  save_interval: 10

@@ -163,11 +163,11 @@ def build_imagenet_dataset(data_dir, split="train", img_size=224,
                            color_jitter=0.4, reprob=0.25, crop_ratio=0.875,
                            lazy=False):
     """
-    Build an ImageNet dataset from a directory of parquet files.
+    Build a dataset from a directory of parquet files.
 
     Args:
-        data_dir:    Root directory containing train/ and val/ subdirs with .parquet files.
-        split:       "train" or "val"
+        data_dir:    Root directory containing parquet files (various layouts supported).
+        split:       "train", "val", or "test"
         img_size:    Target image size (default 224).
         color_jitter: Color jitter strength for training.
         reprob:      Random erasing probability for training.
@@ -190,7 +190,7 @@ def build_imagenet_dataset(data_dir, split="train", img_size=224,
         os.path.join(data_dir, "data", f"{split}-*.parquet"),
         os.path.join(data_dir, "data", split, "*.parquet"),
     ]
-    # For val split, also try "validation" naming (HuggingFace convention)
+    # For val split, also try "validation" and "test" naming (HuggingFace convention)
     if split == "val":
         search_patterns += [
             os.path.join(data_dir, "validation", "*.parquet"),
@@ -199,6 +199,11 @@ def build_imagenet_dataset(data_dir, split="train", img_size=224,
             os.path.join(data_dir, "data", f"validation*.parquet"),
             os.path.join(data_dir, "data", f"validation-*.parquet"),
             os.path.join(data_dir, "data", "validation", "*.parquet"),
+            # Some datasets only have test split, use as val fallback
+            os.path.join(data_dir, "test", "*.parquet"),
+            os.path.join(data_dir, f"test-*.parquet"),
+            os.path.join(data_dir, "data", f"test-*.parquet"),
+            os.path.join(data_dir, "data", "test", "*.parquet"),
         ]
 
     parquet_files = []

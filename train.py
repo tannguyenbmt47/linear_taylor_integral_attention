@@ -25,6 +25,11 @@ from models.deit_linear_taylor_integral import (
     deit_small_linear_taylor_integral,
     deit_base_linear_taylor_integral,
 )
+from models.deit_integral_attention import (
+    deit_tiny_integral,
+    deit_small_integral,
+    deit_base_integral,
+)
 from utils.dataset import build_imagenet_dataset, MixupCutmix
 
 
@@ -65,16 +70,25 @@ def merge_cli_overrides(cfg, args):
 #  Model builder
 # ════════════════════════════════════════════════════════════
 
-VARIANT_FACTORIES = {
-    "tiny": deit_tiny_linear_taylor_integral,
-    "small": deit_small_linear_taylor_integral,
-    "base": deit_base_linear_taylor_integral,
+MODEL_FACTORIES = {
+    "deit_linear_taylor_integral": {
+        "tiny": deit_tiny_linear_taylor_integral,
+        "small": deit_small_linear_taylor_integral,
+        "base": deit_base_linear_taylor_integral,
+    },
+    "deit_integral_attention": {
+        "tiny": deit_tiny_integral,
+        "small": deit_small_integral,
+        "base": deit_base_integral,
+    },
 }
 
 
 def build_model(cfg):
+    model_name = cfg["model"].get("name", "deit_linear_taylor_integral")
     variant = cfg["model"]["variant"]
-    factory = VARIANT_FACTORIES[variant]
+    factories = MODEL_FACTORIES[model_name]
+    factory = factories[variant]
     model = factory(
         num_classes=cfg["model"]["num_classes"],
         img_size=cfg["model"]["img_size"],
@@ -303,7 +317,8 @@ def main():
     model = build_model(cfg)
     model = model.to(device)
     num_params = sum(p.numel() for p in model.parameters()) / 1e6
-    print(f"Model: DeiT-{cfg['model']['variant']} Linear Taylor Integral  ({num_params:.1f}M params)")
+    model_name = cfg["model"].get("name", "deit_linear_taylor_integral")
+    print(f"Model: {model_name} [{cfg['model']['variant']}]  ({num_params:.1f}M params)")
 
     # ── Optimizer ──
     optimizer = torch.optim.AdamW(
