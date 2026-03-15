@@ -232,6 +232,81 @@ def build_imagenet_dataset(data_dir, split="train", img_size=224,
 
 
 # ════════════════════════════════════════════════════════════
+#  HuggingFace `datasets` integration
+# ════════════════════════════════════════════════════════════
+
+class HuggingFaceDataset(Dataset):
+    """
+    Wraps a HuggingFace `datasets.Dataset` object for use with
+    standard PyTorch DataLoader.
+
+    Works with datasets loaded via:
+        from datasets import load_dataset
+        ds = load_dataset("ILSVRC/imagenet-1k")
+
+    Expects columns: "image" (PIL Image) and "label" (int).
+    """
+
+    def __init__(self, hf_dataset, transform=None):
+        self.dataset = hf_dataset
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        item = self.dataset[idx]
+        img = item["image"].convert("RGB")
+        label = item["label"]
+        if self.transform is not None:
+            img = self.transform(img)
+        return img, label
+
+
+def build_hf_dataset(dataset_name, split="train", img_size=224,
+                     color_jitter=0.4, reprob=0.25, crop_ratio=0.875,
+                     cache_dir=None, token=None, trust_remote_code=False):
+    """
+    Build a dataset directly from HuggingFace Hub using `datasets` library.
+
+    Args:
+        dataset_name:  HuggingFace dataset identifier, e.g. "ILSVRC/imagenet-1k"
+        split:         "train" or "val" (mapped to "validation" for HF)
+        img_size:      Target image size (default 224)
+        color_jitter:  Color jitter strength for training
+        reprob:        Random erasing probability for training
+        crop_ratio:    Center crop ratio for validation
+        cache_dir:     Custom cache directory (default: ~/.cache/huggingface/datasets)
+        token:         HuggingFace token for gated datasets (or True to use saved token)
+        trust_remote_code: Whether to trust remote code from HF dataset scripts
+
+    Returns:
+        torch.utils.data.Dataset
+    """
+    from datasets import load_dataset
+
+    # Map "val" → "validation" for HuggingFace convention
+    hf_split = "validation" if split == "val" else split
+
+    print(f"  Loading HuggingFace dataset: {dataset_name} [{hf_split}] ...")
+    hf_ds = load_dataset(
+        dataset_name,
+        split=hf_split,
+        cache_dir=cache_dir,
+        token=token,
+        trust_remote_code=trust_remote_code,
+    )
+    print(f"  Loaded {len(hf_ds):,} samples")
+
+    if split == "train":
+        transform = build_train_transform(img_size, color_jitter, reprob)
+    else:
+        transform = build_val_transform(img_size, crop_ratio)
+
+    return HuggingFaceDataset(hf_ds, transform=transform)
+
+
+# ════════════════════════════════════════════════════════════
 #  Mixup / CutMix  (DeiT training recipe)
 # ════════════════════════════════════════════════════════════
 

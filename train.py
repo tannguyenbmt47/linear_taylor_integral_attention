@@ -30,7 +30,7 @@ from models.deit_integral_attention import (
     deit_small_integral,
     deit_base_integral,
 )
-from utils.dataset import build_imagenet_dataset, MixupCutmix
+from utils.dataset import build_imagenet_dataset, build_hf_dataset, MixupCutmix
 
 
 # ════════════════════════════════════════════════════════════
@@ -275,24 +275,48 @@ def main():
         print(f"  GPU: {torch.cuda.get_device_name()}")
 
     # ── Data ──
-    data_dir = cfg["train"]["data_dir"]
     img_size = cfg["model"]["img_size"]
     aug_cfg = cfg["train"]["augmentation"]
-    lazy = cfg.get("data", {}).get("lazy", False)
+    data_format = cfg.get("data", {}).get("format", "parquet")
 
-    print(f"Loading data from: {data_dir} (lazy={lazy})")
+    if data_format == "huggingface":
+        # Load directly from HuggingFace Hub via `datasets` library
+        dataset_name = cfg["data"]["dataset_name"]
+        cache_dir = cfg["data"].get("cache_dir", None)
+        token = cfg["data"].get("token", True)  # True = use saved token
+        trust_remote = cfg["data"].get("trust_remote_code", False)
 
-    train_dataset = build_imagenet_dataset(
-        data_dir, split="train", img_size=img_size,
-        color_jitter=aug_cfg["color_jitter"],
-        reprob=aug_cfg["reprob"],
-        lazy=lazy,
-    )
-    val_dataset = build_imagenet_dataset(
-        data_dir, split="val", img_size=img_size,
-        crop_ratio=cfg["eval"]["crop_ratio"],
-        lazy=lazy,
-    )
+        print(f"Loading HuggingFace dataset: {dataset_name}")
+        train_dataset = build_hf_dataset(
+            dataset_name, split="train", img_size=img_size,
+            color_jitter=aug_cfg["color_jitter"],
+            reprob=aug_cfg["reprob"],
+            cache_dir=cache_dir, token=token,
+            trust_remote_code=trust_remote,
+        )
+        val_dataset = build_hf_dataset(
+            dataset_name, split="val", img_size=img_size,
+            crop_ratio=cfg["eval"]["crop_ratio"],
+            cache_dir=cache_dir, token=token,
+            trust_remote_code=trust_remote,
+        )
+    else:
+        # Load from local parquet files
+        data_dir = cfg["train"]["data_dir"]
+        lazy = cfg.get("data", {}).get("lazy", False)
+        print(f"Loading data from: {data_dir} (lazy={lazy})")
+
+        train_dataset = build_imagenet_dataset(
+            data_dir, split="train", img_size=img_size,
+            color_jitter=aug_cfg["color_jitter"],
+            reprob=aug_cfg["reprob"],
+            lazy=lazy,
+        )
+        val_dataset = build_imagenet_dataset(
+            data_dir, split="val", img_size=img_size,
+            crop_ratio=cfg["eval"]["crop_ratio"],
+            lazy=lazy,
+        )
 
     print(f"  Train samples: {len(train_dataset):,}")
     print(f"  Val samples:   {len(val_dataset):,}")
