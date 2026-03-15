@@ -30,6 +30,11 @@ from models.deit_integral_attention import (
     deit_small_integral,
     deit_base_integral,
 )
+from models.deit_integral_diff import (
+    deit_tiny_integral_diff,
+    deit_small_integral_diff,
+    deit_base_integral_diff,
+)
 from utils.dataset import build_imagenet_dataset, build_hf_dataset, MixupCutmix
 
 
@@ -80,6 +85,11 @@ MODEL_FACTORIES = {
         "tiny": deit_tiny_integral,
         "small": deit_small_integral,
         "base": deit_base_integral,
+    },
+    "deit_integral_diff": {
+        "tiny": deit_tiny_integral_diff,
+        "small": deit_small_integral_diff,
+        "base": deit_base_integral_diff,
     },
 }
 

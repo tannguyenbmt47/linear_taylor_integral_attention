@@ -1,0 +1,75 @@
+# ============================================================
+# DeiT Integral-Diff Attention — ImageNet-1K (HuggingFace datasets)
+# ============================================================
+# Uses `datasets` library: load_dataset("ILSVRC/imagenet-1k")
+# Requires: pip install datasets
+# Requires: huggingface-cli login (ImageNet is a gated dataset)
+# ============================================================
+
+# ── Model ────────────────────────────────────────────────────
+model:
+  name: deit_integral_diff
+  variant: tiny                     # tiny | small | base
+  img_size: 224
+  patch_size: 16
+  in_channels: 3
+  num_classes: 1000
+  drop_path_rate: 0.1
+  dropout: 0.0
+  attn_dropout: 0.0
+  use_dist_token: false
+
+# ── Data ─────────────────────────────────────────────────────
+data:
+  format: huggingface
+  dataset_name: ILSVRC/imagenet-1k
+  cache_dir: null
+  token: true
+  trust_remote_code: false
+
+# ── Training ─────────────────────────────────────────────────
+train:
+  dataset: imagenet
+  data_dir: null
+  batch_size: 256
+  epochs: 300
+  warmup_epochs: 5
+
+  # Optimizer
+  optimizer: adamw
+  lr: 1.0e-3
+  weight_decay: 0.05
+  betas: [0.9, 0.999]
+
+  # LR scheduler
+  scheduler: cosine
+  min_lr: 1.0e-5
+
+  # Augmentation (DeiT recipe)
+  augmentation:
+    rand_augment: rand-m9-mstd0.5-inc1
+    mixup_alpha: 0.8
+    cutmix_alpha: 1.0
+    mixup_prob: 1.0
+    mixup_switch_prob: 0.5
+    color_jitter: 0.4
+    reprob: 0.25
+
+  # Regularization
+  label_smoothing: 0.1
+  stochastic_depth: 0.1
+
+# ── Evaluation ───────────────────────────────────────────────
+eval:
+  batch_size: 512
+  crop_ratio: 0.875
+
+# ── System ───────────────────────────────────────────────────
+system:
+  num_workers: 8
+  pin_memory: true
+  mixed_precision: true
+  seed: 42
+  output_dir: ./checkpoints/imagenet_integral_diff
+  log_interval: 50
+  save_interval: 10
