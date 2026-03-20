@@ -35,6 +35,14 @@ from models.deit_integral_diff import (
     deit_small_integral_diff,
     deit_base_integral_diff,
 )
+from models.agent_deit import (
+    deit_tiny_agent_attention,
+    deit_small_agent_attention,
+    deit_base_agent_attention,
+)
+from models.deit_token_agent import (
+    DeiTTinyTokenAgent,
+)
 from utils.dataset import build_imagenet_dataset, build_hf_dataset, MixupCutmix
 
 
@@ -91,6 +99,29 @@ MODEL_FACTORIES = {
         "small": deit_small_integral_diff,
         "base": deit_base_integral_diff,
     },
+    "deit_agent_attention": {
+        "tiny": deit_tiny_agent_attention,
+        "small": deit_small_agent_attention,
+        "base": deit_base_agent_attention,
+    },
+    "deit_tiny_token_agent": {
+        "tiny": lambda **kw: DeiTTinyTokenAgent(
+            img_size=kw.get('img_size', 224),
+            patch_size=kw.get('patch_size', 16),
+            in_chans=kw.get('in_channels', 3),
+            num_classes=kw.get('num_classes', 1000),
+            embed_dim=kw.get('embed_dim', 192),
+            depth=kw.get('depth', 8),
+            num_heads=kw.get('num_heads', 3),
+            mlp_ratio=kw.get('mlp_ratio', 4.0),
+            qkv_bias=kw.get('qkv_bias', True),
+            drop_rate=kw.get('drop_rate', 0.3),
+            attn_drop_rate=kw.get('attn_drop_rate', 0.2),
+            drop_path_rate=kw.get('drop_path_rate', 0.4),
+            agent_num=kw.get('agent_num', 36),
+            d_k=kw.get('d_k', 64),
+        ),
+    },
 }
 
 
@@ -99,16 +130,37 @@ def build_model(cfg):
     variant = cfg["model"]["variant"]
     factories = MODEL_FACTORIES[model_name]
     factory = factories[variant]
-    model = factory(
-        num_classes=cfg["model"]["num_classes"],
-        img_size=cfg["model"]["img_size"],
-        patch_size=cfg["model"]["patch_size"],
-        in_channels=cfg["model"]["in_channels"],
-        dropout=cfg["model"]["dropout"],
-        attn_dropout=cfg["model"]["attn_dropout"],
-        drop_path_rate=cfg["model"]["drop_path_rate"],
-        use_dist_token=cfg["model"]["use_dist_token"],
-    )
+    
+    # Common model args
+    model_args = {
+        "num_classes": cfg["model"]["num_classes"],
+        "img_size": cfg["model"]["img_size"],
+        "patch_size": cfg["model"]["patch_size"],
+        "in_channels": cfg["model"]["in_channels"],
+        "dropout": cfg["model"].get("drop_rate", cfg["model"].get("dropout", 0.0)),
+        "attn_dropout": cfg["model"].get("attn_drop_rate", cfg["model"].get("attn_dropout", 0.0)),
+        "drop_path_rate": cfg["model"]["drop_path_rate"],
+    }
+    
+    # Only pass use_dist_token if model supports it
+    if model_name in ["deit_linear_taylor_integral", "deit_integral_attention", "deit_integral_diff"]:
+        model_args["use_dist_token"] = cfg["model"].get("use_dist_token", False)
+    
+    # Add token agent specific args
+    if model_name == "deit_tiny_token_agent":
+        model_args.update({
+            "embed_dim": cfg["model"].get("embed_dim", 192),
+            "depth": cfg["model"].get("depth", 8),
+            "num_heads": cfg["model"].get("num_heads", 3),
+            "mlp_ratio": cfg["model"].get("mlp_ratio", 4.0),
+            "qkv_bias": cfg["model"].get("qkv_bias", True),
+            "drop_rate": cfg["model"].get("drop_rate", 0.3),
+            "attn_drop_rate": cfg["model"].get("attn_drop_rate", 0.2),
+            "agent_num": cfg["model"].get("agent_num", 36),
+            "d_k": cfg["model"].get("d_k", 64),
+        })
+    
+    model = factory(**model_args)
     return model
 
 
@@ -144,7 +196,7 @@ def train_one_epoch(model, loader, optimizer, scaler, mixup_fn, device, cfg, epo
     correct = 0
     total = 0
     log_interval = cfg["system"]["log_interval"]
-    use_dist = cfg["model"]["use_dist_token"]
+    use_dist = cfg["model"].get("use_dist_token", False)
 
     pbar = tqdm(loader, desc=f"Epoch {epoch+1}", leave=False)
     for step, (images, targets) in enumerate(pbar):
@@ -207,7 +259,7 @@ def validate(model, loader, device, cfg):
     total_loss = 0.0
     correct = 0
     total = 0
-    use_dist = cfg["model"]["use_dist_token"]
+    use_dist = cfg["model"].get("use_dist_token", False)
 
     for images, targets in tqdm(loader, desc="Validating", leave=False):
         images = images.to(device, non_blocking=True)
@@ -383,13 +435,28 @@ def main():
     if cfg.get("resume"):
         start_epoch, best_acc = load_checkpoint(cfg["resume"], model, optimizer, scaler)
 
-    # ── Training loop ──
-    output_dir = cfg["system"]["output_dir"]
+    # ── Output directory with run counter and config name ──
+    base_output_dir = cfg["system"]["output_dir"]
+    config_name = os.path.splitext(os.path.basename(args.config))[0]  # e.g., "adaptive_token_agent_pet"
+    run_num = 1
+    output_dir = os.path.join(base_output_dir, f"run_{run_num}_{config_name}")
+    while os.path.exists(output_dir):
+        run_num += 1
+        output_dir = os.path.join(base_output_dir, f"run_{run_num}_{config_name}")
+    os.makedirs(output_dir, exist_ok=True)
+    
     total_epochs = cfg["train"]["epochs"]
     save_interval = cfg["system"]["save_interval"]
+    
+    # Early stopping
+    early_stopping_patience = cfg["train"].get("early_stopping_patience", 15)
+    early_stopping_metric = cfg["train"].get("early_stopping_metric", "val_acc")
+    epochs_no_improve = 0
 
     print(f"\n{'='*60}")
     print(f" Training: epochs {start_epoch+1}–{total_epochs}, batch_size={cfg['train']['batch_size']}")
+    print(f" Output directory: {output_dir}")
+    print(f" Early stopping: metric={early_stopping_metric}, patience={early_stopping_patience}")
     print(f"{'='*60}\n")
 
     for epoch in range(start_epoch, total_epochs):
@@ -428,12 +495,32 @@ def main():
         if (epoch + 1) % save_interval == 0:
             save_checkpoint(state, output_dir, f"checkpoint_epoch_{epoch+1}.pth")
         if is_best:
+            # Save best with metrics in filename and metadata
+            best_ckpt_name = f"best_epoch{epoch+1}_val_acc{val_acc:.2f}_loss{val_loss:.4f}.pth"
+            state["best_metrics"] = {
+                "epoch": epoch + 1,
+                "val_acc": val_acc,
+                "val_loss": val_loss,
+                "train_acc": train_acc,
+                "train_loss": train_loss,
+            }
+            save_checkpoint(state, output_dir, best_ckpt_name)
+            # Also save as best.pth for convenience
             save_checkpoint(state, output_dir, "best.pth")
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+        
+        # Early stopping
+        if epochs_no_improve >= early_stopping_patience:
+            print(f"\n⛔ Early stopping: No improvement for {early_stopping_patience} epochs")
+            print(f"Best {early_stopping_metric}: {best_acc:.2f}%\n")
+            break
 
     # Save final
     save_checkpoint(state, output_dir, "last.pth")
     print(f"\nTraining complete. Best val accuracy: {best_acc:.2f}%")
-
+    print(f"Output saved to: {output_dir}")
 
 if __name__ == "__main__":
     main()

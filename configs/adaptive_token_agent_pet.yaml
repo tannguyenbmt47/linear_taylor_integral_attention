@@ -1,0 +1,81 @@
+# ============================================================
+# Adaptive Token Agent Attention — Oxford-IIIT Pet (37 classes)
+# ============================================================
+# TokenAdaptionModule (learnable aggregation) + 8 position biases
+# O(N*n) complexity with learnable agent generation
+# ============================================================
+
+# ── Model ────────────────────────────────────────────────────
+model:
+  name: deit_tiny_token_agent
+  variant: tiny
+  img_size: 224
+  patch_size: 16
+  in_channels: 3
+  num_classes: 37
+  dropout: 0.0  # Inherited from drop_rate in model section
+  attn_dropout: 0.0  # Inherited from attn_drop_rate in model section
+  embed_dim: 192
+  depth: 8  # Deeper model for better capacity
+  num_heads: 3
+  mlp_ratio: 4.0
+  qkv_bias: true
+  drop_rate: 0.3  # Strong dropout
+  attn_drop_rate: 0.2
+  drop_path_rate: 0.4  # Stochastic depth
+  agent_num: 36  # 6×6 grid
+  d_k: 64  # Token adaption dimension
+
+# ── Data ─────────────────────────────────────────────────────
+data:
+  format: parquet
+  lazy: false
+
+# ── Training ─────────────────────────────────────────────────
+train:
+  dataset: oxford-iiit-pet
+  data_dir: ./data/dog/oxford-iiit-pet
+  batch_size: 32  # Moderate batch size for stability
+  epochs: 100
+  warmup_epochs: 5
+  label_smoothing: 0.1
+  
+  # Early stopping
+  early_stopping_patience: 15  # Stop if val_acc not improving for 15 epochs
+  early_stopping_metric: val_acc  # Monitor validation accuracy
+
+  # Optimizer
+  optimizer: adamw
+  lr: 0.0005
+  weight_decay: 0.1  # Strong L2 regularization
+  betas: [0.9, 0.999]
+
+  # LR scheduler
+  scheduler: cosine
+  min_lr: 1.0e-6
+
+  # Augmentation
+  augmentation:
+    mixup_alpha: 0.8
+    cutmix_alpha: 2.0
+    mixup_prob: 0.5
+    mixup_switch_prob: 0.5
+    color_jitter: 0.6
+    rand_augment: rand-m9-mstd0.5-inc1
+    reprob: 0.25  # Random erasing probability
+
+# ── Evaluation ──────────────────────────────────────────────
+eval:
+  batch_size: 64
+  crop_ratio: 1.0
+
+# ── System ──────────────────────────────────────────────────
+system:
+  output_dir: ./output
+  log_interval: 50
+  save_interval: 10  # Save checkpoint every N epochs
+  pin_memory: true
+  seed: 42
+  num_workers: 4
+  mixed_precision: false  # fp32
+  device: cuda
